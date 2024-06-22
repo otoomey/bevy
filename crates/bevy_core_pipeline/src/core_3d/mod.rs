@@ -993,7 +993,7 @@ pub fn prepare_prepass_textures(
                 .map(|t| ColorAttachment::new(t, None, Some(LinearRgba::BLACK))),
             deferred_lighting_pass_id: cached_deferred_lighting_pass_id_texture
                 .map(|t| ColorAttachment::new(t, None, Some(LinearRgba::BLACK))),
-            size,
+            size
         });
     }
 }

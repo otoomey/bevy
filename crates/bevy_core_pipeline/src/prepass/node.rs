@@ -13,6 +13,7 @@ use bevy_render::{
 use bevy_utils::tracing::info_span;
 
 use crate::{hiz::{HiZPrepassBindGroups, HiZPrepassPipeline}, skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup}};
+use crate::{hiz::{HiZPrepassBindGroups, HiZPrepassPipeline}, skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup}};
 
 use super::{
     AlphaMask3dPrepass, DeferredPrepass, Opaque3dPrepass, PreviousViewUniformOffset,
