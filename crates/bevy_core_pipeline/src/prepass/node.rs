@@ -5,14 +5,14 @@ use bevy_render::{
     diagnostic::RecordDiagnostics,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
     render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, PipelineCache, RenderPassDescriptor, StoreOp},
+    render_resource::{CommandEncoderDescriptor, ComputePassDescriptor, PipelineCache, RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
     view::{ViewDepthTexture, ViewUniformOffset},
 };
 #[cfg(feature = "trace")]
 use bevy_utils::tracing::info_span;
 
-use crate::skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup};
+use crate::{hiz::{HiZPrepassBindGroups, HiZPrepassPipeline}, skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup}};
 
 use super::{
     AlphaMask3dPrepass, DeferredPrepass, Opaque3dPrepass, PreviousViewUniformOffset,
@@ -35,6 +35,7 @@ impl ViewNode for PrepassNode {
         Option<&'static DeferredPrepass>,
         Option<&'static RenderSkyboxPrepassPipeline>,
         Option<&'static SkyboxPrepassBindGroup>,
+        Option<&'static HiZPrepassBindGroups>,
         Option<&'static PreviousViewUniformOffset>,
     );
 
@@ -51,6 +52,7 @@ impl ViewNode for PrepassNode {
             deferred_prepass,
             skybox_prepass_pipeline,
             skybox_prepass_bind_group,
+            hiz_prepass_bind_group,
             view_prev_uniform_offset,
         ): QueryItem<'w, Self::ViewQuery>,
         world: &'w World,
@@ -170,6 +172,36 @@ impl ViewNode for PrepassNode {
                         prepass_depth_texture.texture.texture.as_image_copy(),
                         view_prepass_textures.size,
                     );
+                }
+
+                if let (
+                    Some(hiz_prepass_bind_group),
+                    Some(prepass_depth_texture)
+                ) = (
+                    hiz_prepass_bind_group,
+                    &view_prepass_textures.depth
+                ) {
+                    println!("running pipeline");
+                    let pipeline_cache = world.resource::<PipelineCache>();
+                    let hiz_prepass_pipeline = world.resource::<HiZPrepassPipeline>();
+    
+                    let mut compute_pass = command_encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("prepass_hiz"),
+                        ..Default::default()
+                    });
+    
+                    if let Some(pipeline) = pipeline_cache.get_compute_pipeline(hiz_prepass_pipeline.pipeline_id) {
+                        compute_pass.set_pipeline(pipeline);
+                        for i in 0..(prepass_depth_texture.texture.views.len() - 1) {
+                            compute_pass.set_bind_group(0, &hiz_prepass_bind_group.groups[i], &[]);
+                            let grp_sz = hiz_prepass_pipeline.work_group_size;
+                            let groups_x = (view_depth_texture.texture.width() / (grp_sz - 1)) / grp_sz;
+                            let groups_y = (view_depth_texture.texture.height() / (grp_sz - 1)) / grp_sz;
+                            compute_pass.dispatch_workgroups(groups_x, groups_y, 1);
+                        }
+                    }
+
+                    drop(compute_pass)
                 }
             }
 

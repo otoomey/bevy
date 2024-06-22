@@ -20,12 +20,14 @@ pub mod fxaa;
 pub mod motion_blur;
 pub mod msaa_writeback;
 pub mod prepass;
+mod hiz;
 mod skybox;
 pub mod smaa;
 mod taa;
 pub mod tonemapping;
 pub mod upscaling;
 
+use hiz::HiZPlugin;
 pub use skybox::Skybox;
 
 /// Experimental features that are not yet finished. Please report any issues you encounter!
@@ -99,6 +101,7 @@ impl Plugin for CorePipelinePlugin {
                 MotionBlurPlugin,
                 DepthOfFieldPlugin,
                 SmaaPlugin,
+                HiZPlugin
             ));
     }
 }
