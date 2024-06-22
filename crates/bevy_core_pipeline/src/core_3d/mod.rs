@@ -62,7 +62,7 @@ pub const DEPTH_TEXTURE_SAMPLING_SUPPORTED: bool = false;
 #[cfg(any(feature = "webgpu", not(target_arch = "wasm32")))]
 pub const DEPTH_TEXTURE_SAMPLING_SUPPORTED: bool = true;
 
-use std::ops::Range;
+use std::{array, ops::Range};
 
 use bevy_asset::AssetId;
 use bevy_color::LinearRgba;
@@ -85,8 +85,7 @@ use bevy_render::{
         ViewSortedRenderPhases,
     },
     render_resource::{
-        BindGroupId, CachedRenderPipelineId, Extent3d, FilterMode, Sampler, SamplerDescriptor,
-        Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+        BindGroupId, CachedRenderPipelineId, Extent3d, FilterMode, Sampler, SamplerDescriptor, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension
     },
     renderer::RenderDevice,
     texture::{BevyDefault, ColorAttachment, Image, TextureCache},
@@ -96,21 +95,15 @@ use bevy_render::{
 use bevy_utils::{tracing::warn, HashMap};
 
 use crate::{
-    core_3d::main_transmissive_pass_3d_node::MainTransmissivePass3dNode,
-    deferred::{
+    core_3d::main_transmissive_pass_3d_node::MainTransmissivePass3dNode, deferred::{
         copy_lighting_id::CopyDeferredLightingIdNode, node::DeferredGBufferPrepassNode,
         AlphaMask3dDeferred, Opaque3dDeferred, DEFERRED_LIGHTING_PASS_ID_FORMAT,
         DEFERRED_PREPASS_FORMAT,
-    },
-    dof::DepthOfFieldNode,
-    prepass::{
+    }, dof::DepthOfFieldNode, hiz::{HiZ, HIZ_MIPMAP_COUNT}, prepass::{
         node::PrepassNode, AlphaMask3dPrepass, DeferredPrepass, DepthPrepass, MotionVectorPrepass,
         NormalPrepass, Opaque3dPrepass, OpaqueNoLightmap3dBinKey, ViewPrepassTextures,
         MOTION_VECTOR_PREPASS_FORMAT, NORMAL_PREPASS_FORMAT,
-    },
-    skybox::SkyboxPlugin,
-    tonemapping::TonemappingNode,
-    upscaling::UpscalingNode,
+    }, skybox::SkyboxPlugin, tonemapping::TonemappingNode, upscaling::UpscalingNode
 };
 
 use self::graph::{Core3d, Node3d};
@@ -536,6 +529,7 @@ pub fn extract_camera_prepass_phase(
             (
                 Entity,
                 &Camera,
+                Option<&HiZ>,
                 Has<DepthPrepass>,
                 Has<NormalPrepass>,
                 Has<MotionVectorPrepass>,
@@ -548,7 +542,7 @@ pub fn extract_camera_prepass_phase(
 ) {
     live_entities.clear();
 
-    for (entity, camera, depth_prepass, normal_prepass, motion_vector_prepass, deferred_prepass) in
+    for (entity, camera, hiz, depth_prepass, normal_prepass, motion_vector_prepass, deferred_prepass) in
         cameras_3d.iter()
     {
         if !camera.is_active {
@@ -586,6 +580,10 @@ pub fn extract_camera_prepass_phase(
         }
         if deferred_prepass {
             entity.insert(DeferredPrepass);
+        }
+        if let Some(hiz) = hiz {
+            println!("bingo!");
+            entity.insert(hiz.clone());
         }
     }
 
@@ -796,6 +794,7 @@ pub fn prepare_prepass_textures(
     alpha_mask_3d_deferred_phases: Res<ViewBinnedRenderPhases<AlphaMask3dDeferred>>,
     views_3d: Query<(
         Entity,
+        Option<&HiZ>,
         &ExtractedCamera,
         Has<DepthPrepass>,
         Has<NormalPrepass>,
@@ -808,7 +807,7 @@ pub fn prepare_prepass_textures(
     let mut deferred_textures = HashMap::default();
     let mut deferred_lighting_id_textures = HashMap::default();
     let mut motion_vectors_textures = HashMap::default();
-    for (entity, camera, depth_prepass, normal_prepass, motion_vector_prepass, deferred_prepass) in
+    for (entity, hiz, camera, depth_prepass, normal_prepass, motion_vector_prepass, deferred_prepass) in
         &views_3d
     {
         if !opaque_3d_prepass_phases.contains_key(&entity)
@@ -833,19 +832,61 @@ pub fn prepare_prepass_textures(
             depth_textures
                 .entry(camera.target.clone())
                 .or_insert_with(|| {
-                    let descriptor = TextureDescriptor {
-                        label: Some("prepass_depth_texture"),
-                        size,
-                        mip_level_count: 1,
-                        sample_count: msaa.samples(),
-                        dimension: TextureDimension::D2,
-                        format: CORE_3D_DEPTH_FORMAT,
-                        usage: TextureUsages::COPY_DST
-                            | TextureUsages::RENDER_ATTACHMENT
-                            | TextureUsages::TEXTURE_BINDING,
-                        view_formats: &[],
-                    };
-                    texture_cache.get(&render_device, descriptor)
+                    match hiz {
+                        None => {
+                            let descriptor = TextureDescriptor {
+                                label: Some("prepass_depth_texture"),
+                                size,
+                                mip_level_count: 1,
+                                sample_count: msaa.samples(),
+                                dimension: TextureDimension::D2,
+                                format: CORE_3D_DEPTH_FORMAT,
+                                usage: TextureUsages::COPY_DST
+                                    | TextureUsages::RENDER_ATTACHMENT
+                                    | TextureUsages::TEXTURE_BINDING,
+                                view_formats: &[],
+                            };
+        
+                            texture_cache.get(&render_device, descriptor)
+                        }
+                        Some(_) => {
+                            println!("generating mipmap views");
+                            let descriptor = TextureDescriptor {
+                                label: Some("prepass_depth_texture"),
+                                size,
+                                mip_level_count: HIZ_MIPMAP_COUNT,
+                                sample_count: msaa.samples(),
+                                dimension: TextureDimension::D2,
+                                format: CORE_3D_DEPTH_FORMAT,
+                                usage: TextureUsages::COPY_DST
+                                    | TextureUsages::RENDER_ATTACHMENT
+                                    | TextureUsages::TEXTURE_BINDING,
+                                view_formats: &[CORE_3D_DEPTH_FORMAT],
+                            };
+        
+                            let mut ctexture = texture_cache.get(&render_device, descriptor);
+
+                            if ctexture.views.len() != HIZ_MIPMAP_COUNT as usize {
+                                let views: [TextureView; HIZ_MIPMAP_COUNT as usize] = array::from_fn(|i| ctexture.texture
+                                    .create_view(&TextureViewDescriptor {
+                                        label: Some("prepass_depth_mipmap_gen_view"),
+                                        // `Texture format Depth32Float is not supported for storage use`
+                                        format: Some(TextureFormat::R32Float), 
+                                        dimension: Some(TextureViewDimension::D2),
+                                        aspect: TextureAspect::DepthOnly,
+                                        base_mip_level: i as u32 + 1,
+                                        mip_level_count: Some(1),
+                                        base_array_layer: 0,
+                                        array_layer_count: Some(1),
+                                    })
+                                );
+        
+                                ctexture.views = views.to_vec();
+                            }
+
+                            ctexture
+                        }
+                    }
                 })
                 .clone()
         });

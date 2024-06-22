@@ -1,4 +1,5 @@
 #import bevy_pbr::{
+    mesh_view_bindings,
     mesh_view_bindings::globals,
     prepass_utils,
     forward_io::VertexOutput,
@@ -8,6 +9,7 @@ struct ShowPrepassSettings {
     show_depth: u32,
     show_normals: u32,
     show_motion_vectors: u32,
+    depth_mipmap: i32,
     padding_1: u32,
     padding_2: u32,
 }
@@ -24,7 +26,7 @@ fn fragment(
     let sample_index = 0u;
 #endif
     if settings.show_depth == 1u {
-        let depth = bevy_pbr::prepass_utils::prepass_depth(mesh.position, sample_index);
+        let depth = textureLoad(mesh_view_bindings::depth_prepass_texture, vec2<i32>(mesh.position.xy), settings.depth_mipmap);
         return vec4(depth, depth, depth, 1.0);
     } else if settings.show_normals == 1u {
         let normal = bevy_pbr::prepass_utils::prepass_normal(mesh.position, sample_index);

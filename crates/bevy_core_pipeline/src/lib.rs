@@ -20,6 +20,7 @@ pub mod fxaa;
 pub mod motion_blur;
 pub mod msaa_writeback;
 pub mod prepass;
+pub mod hiz;
 mod skybox;
 pub mod smaa;
 mod taa;
@@ -62,6 +63,7 @@ use crate::{
     msaa_writeback::MsaaWritebackPlugin,
     prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
     smaa::SmaaPlugin,
+    hiz::{HiZPlugin, HiZ},
     tonemapping::TonemappingPlugin,
     upscaling::UpscalingPlugin,
 };
@@ -85,6 +87,7 @@ impl Plugin for CorePipelinePlugin {
             .register_type::<NormalPrepass>()
             .register_type::<MotionVectorPrepass>()
             .register_type::<DeferredPrepass>()
+            .register_type::<HiZ>()
             .add_plugins((
                 Core2dPlugin,
                 Core3dPlugin,
@@ -99,6 +102,7 @@ impl Plugin for CorePipelinePlugin {
                 MotionBlurPlugin,
                 DepthOfFieldPlugin,
                 SmaaPlugin,
+                HiZPlugin
             ));
     }
 }

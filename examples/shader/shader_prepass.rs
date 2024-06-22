@@ -3,7 +3,7 @@
 //! The textures are not generated for any material using alpha blending.
 
 use bevy::{
-    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass},
+    core_pipeline::{hiz::{self, HiZ}, prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass}},
     pbr::{NotShadowCaster, PbrPlugin},
     prelude::*,
     reflect::TypePath,
@@ -61,6 +61,7 @@ fn setup(
         NormalPrepass,
         // This will generate a texture containing screen space pixel motion vectors
         MotionVectorPrepass,
+        hiz::HiZ { mipmaps: 11 }
     ));
 
     // plane
@@ -144,7 +145,8 @@ fn setup(
             TextSection::new("\n\n", style.clone()),
             TextSection::new("Controls\n", style.clone()),
             TextSection::new("---------------\n", style.clone()),
-            TextSection::new("Space - Change output\n", style),
+            TextSection::new("Space - Change output\n", style.clone()),
+            TextSection::new("PageUp/PageDown - Cycle depth mipmaps\n", style),
         ])
         .with_style(Style {
             position_type: PositionType::Absolute,
@@ -199,6 +201,7 @@ struct ShowPrepassSettings {
     show_depth: u32,
     show_normals: u32,
     show_motion_vectors: u32,
+    depth_mipmap: u32,
     padding_1: u32,
     padding_2: u32,
 }
@@ -226,6 +229,7 @@ fn toggle_prepass_view(
     mut prepass_view: Local<u32>,
     keycode: Res<ButtonInput<KeyCode>>,
     material_handle: Query<&Handle<PrepassOutputMaterial>>,
+    hiz: Query<&HiZ>,
     mut materials: ResMut<Assets<PrepassOutputMaterial>>,
     mut text: Query<&mut Text>,
 ) {
@@ -250,5 +254,23 @@ fn toggle_prepass_view(
         mat.settings.show_depth = (*prepass_view == 1) as u32;
         mat.settings.show_normals = (*prepass_view == 2) as u32;
         mat.settings.show_motion_vectors = (*prepass_view == 3) as u32;
+    }
+
+    if keycode.just_pressed(KeyCode::PageUp) {
+        if let Ok(HiZ { mipmaps }) = hiz.get_single() {
+            let handle = material_handle.single();
+            let mat = materials.get_mut(handle).unwrap();
+            if mat.settings.depth_mipmap < *mipmaps {
+                mat.settings.depth_mipmap += 1;
+            }
+        }
+    }
+    
+    if keycode.just_pressed(KeyCode::PageDown) {
+        let handle = material_handle.single();
+        let mat = materials.get_mut(handle).unwrap();
+        if mat.settings.depth_mipmap > 0 {
+            mat.settings.depth_mipmap -= 1;
+        }
     }
 }

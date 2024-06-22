@@ -11,6 +11,7 @@ use wgpu::{TextureDescriptor, TextureViewDescriptor};
 struct CachedTextureMeta {
     texture: Texture,
     default_view: TextureView,
+    views: Vec<TextureView>,
     taken: bool,
     frames_since_last_use: usize,
 }
@@ -22,6 +23,7 @@ struct CachedTextureMeta {
 pub struct CachedTexture {
     pub texture: Texture,
     pub default_view: TextureView,
+    pub views: Vec<TextureView>
 }
 
 /// This resource caches textures that are created repeatedly in the rendering process and
@@ -48,35 +50,42 @@ impl TextureCache {
                         return CachedTexture {
                             texture: texture.texture.clone(),
                             default_view: texture.default_view.clone(),
+                            views: texture.views.clone()
                         };
                     }
                 }
 
                 let texture = render_device.create_texture(&entry.key().clone());
                 let default_view = texture.create_view(&TextureViewDescriptor::default());
+                let views = Vec::new();
                 entry.get_mut().push(CachedTextureMeta {
                     texture: texture.clone(),
                     default_view: default_view.clone(),
+                    views: views.clone(),
                     frames_since_last_use: 0,
                     taken: true,
                 });
                 CachedTexture {
                     texture,
                     default_view,
+                    views
                 }
             }
             Entry::Vacant(entry) => {
                 let texture = render_device.create_texture(entry.key());
                 let default_view = texture.create_view(&TextureViewDescriptor::default());
+                let views = Vec::new();
                 entry.insert(vec![CachedTextureMeta {
                     texture: texture.clone(),
                     default_view: default_view.clone(),
+                    views: views.clone(),
                     taken: true,
                     frames_since_last_use: 0,
                 }]);
                 CachedTexture {
                     texture,
                     default_view,
+                    views
                 }
             }
         }
