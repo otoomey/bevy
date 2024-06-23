@@ -11,7 +11,7 @@ use bevy_ecs::{
 use bevy_reflect::Reflect;
 use bevy_render::{
     render_resource::{
-        binding_types::{sampler, texture_depth_2d, texture_storage_2d}, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedComputePipelineId, ComputePipelineDescriptor, PipelineCache, PushConstantRange, SamplerBindingType, Shader, ShaderStages, StorageTextureAccess, TextureFormat
+        binding_types::{sampler, texture_depth_2d, texture_storage_2d}, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedComputePipelineId, ComputePipelineDescriptor, PipelineCache, PushConstantRange, Sampler, SamplerBindingType, SamplerDescriptor, Shader, ShaderStages, StorageTextureAccess, TextureFormat
     },
     renderer::RenderDevice,
     view::ViewDepthTexture,
@@ -43,12 +43,30 @@ impl Plugin for HiZPlugin {
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
+        render_app.init_resource::<IndirectGpuScene>();
         render_app.init_resource::<HiZPrepassPipeline>();
     }
 }
 
 #[derive(Component, Default, Reflect, Clone)]
 pub struct HiZ;
+
+#[derive(Resource)]
+pub struct IndirectGpuScene {
+    depth_pyramid_sampler: Sampler
+}
+
+impl FromWorld for IndirectGpuScene {
+    fn from_world(world: &mut World) -> Self {
+        let render_device = world.resource::<RenderDevice>();
+        IndirectGpuScene {
+            depth_pyramid_sampler: render_device.create_sampler(&SamplerDescriptor {
+                label: Some("depth_pyramid_sampler"),
+                ..Default::default()
+            })
+        }
+    }
+}
 
 #[derive(Resource)]
 pub struct HiZPrepassPipeline {
@@ -129,6 +147,7 @@ fn prepare_hiz_bind_groups(
     mut commands: Commands,
     pipeline: Res<HiZPrepassPipeline>,
     render_device: Res<RenderDevice>,
+    gpu_scene: Res<IndirectGpuScene>,
     views: Query<(Entity, &ViewDepthTexture, &ViewPrepassTextures)>,
 ) {
     for (entity, view_depth_texture, view_prepass_textures) in &views {
@@ -137,7 +156,7 @@ fn prepare_hiz_bind_groups(
                 Some("hiz_mipmap_bindgroups"),
                 &pipeline.bind_group_layout,
                 &BindGroupEntries::sequential((
-                    view_depth_texture,
+                    view_depth_texture.view(),
                     &depth.texture.views[0],
                     &depth.texture.views[1],
                     &depth.texture.views[2],
